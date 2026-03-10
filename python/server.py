@@ -17,6 +17,7 @@ VBAからHTTP経由でGPIBを制御するためのローカルサーバー。
 """
 import argparse
 import atexit
+import importlib
 import logging
 import os
 import sys
@@ -102,6 +103,33 @@ def list_resources():
 
 
 # ------------------------------------------------------------------
+# Blueprint 自動ロード
+# ------------------------------------------------------------------
+
+def _load_blueprints(app: Flask) -> None:
+    """
+    blueprints/ ディレクトリにある *_blueprint.py を自動検出して登録する。
+
+    【追加】 blueprints/ に *_blueprint.py を置くだけで有効になる
+    【削除】 blueprints/ からファイルを削除するだけで無効になる
+    """
+    bp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "blueprints")
+    if not os.path.isdir(bp_dir):
+        return
+    for fname in sorted(os.listdir(bp_dir)):
+        if not fname.endswith("_blueprint.py") or fname.startswith("_"):
+            continue
+        module_name = f"blueprints.{fname[:-3]}"
+        try:
+            module = importlib.import_module(module_name)
+            if hasattr(module, "blueprint"):
+                app.register_blueprint(module.blueprint)
+                logger.info("Blueprint 登録: %s (prefix=%s)", fname, module.blueprint.url_prefix)
+        except Exception as e:
+            logger.error("Blueprint ロード失敗: %s : %s", fname, e)
+
+
+# ------------------------------------------------------------------
 # サーバー起動
 # ------------------------------------------------------------------
 
@@ -121,6 +149,10 @@ if __name__ == "__main__":
     # GpibManager 初期化 (シャットダウン時にすべての接続を閉じる)
     manager = GpibManager(max_retry=server_settings["max_retry"])
     atexit.register(manager.close_all)
+
+    # Blueprint から参照できるよう app に紐付ける
+    app.gpib_manager = manager
+    _load_blueprints(app)
 
     logger.info(
         "GPIB Server 起動 | http://%s:%d | max_retry=%d",
