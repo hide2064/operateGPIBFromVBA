@@ -43,6 +43,47 @@ def get_server_settings(ini_path: str = None) -> dict:
     }
 
 
+def get_lan_settings(ini_path: str = None) -> dict:
+    """
+    [Lan] セクションの設定を辞書で返す
+
+    Returns:
+        default_socket_port, read_termination, write_termination
+    """
+    cfg = _load(ini_path)
+    return {
+        "default_socket_port": cfg.getint("Lan", "DefaultSocketPort", fallback=5025),
+        "read_termination":    cfg.get   ("Lan", "ReadTermination",   fallback="\n"),
+        "write_termination":   cfg.get   ("Lan", "WriteTermination",  fallback="\n"),
+    }
+
+
+def build_visa_address(protocol: str, host: str, port: str = "") -> str:
+    """
+    接続方式・ホスト・ポートから VISA アドレス文字列を生成する
+
+    Args:
+        protocol: "GPIB" / "TCPIP" / "SOCKET" / "HISLIP"
+        host: GPIBアドレス番号 or IPアドレス/ホスト名
+        port: ポート番号 (SOCKET 時のみ使用。省略時はデフォルトポートを使用)
+
+    Returns:
+        VISAアドレス文字列
+    """
+    p = protocol.upper().strip()
+    if p == "GPIB":
+        return f"GPIB0::{host}::INSTR"
+    if p in ("SOCKET", "TCPIP_SOCKET"):
+        actual_port = port.strip() if port.strip() else str(get_lan_settings()["default_socket_port"])
+        return f"TCPIP0::{host}::{actual_port}::SOCKET"
+    if p in ("HISLIP", "TCPIP_HISLIP"):
+        return f"TCPIP0::{host}::hislip0::INSTR"
+    if p in ("TCPIP", "VXI11", "LAN", "TCPIP_VXI11"):
+        return f"TCPIP0::{host}::INSTR"
+    # 不明なプロトコルはホスト値をそのまま返す (フルVISAアドレスが渡された場合)
+    return host
+
+
 def setup_logging(ini_path: str = None) -> None:
     """
     [Logging] セクションに従ってロギングを初期化する。

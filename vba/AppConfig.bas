@@ -90,6 +90,55 @@ Public Function HealthTimeoutSec() As Long
 End Function
 
 '=============================================================================
+' [Lan] セクション
+'=============================================================================
+
+' Raw Socket 接続のデフォルトポート
+Public Function DefaultSocketPort() As Long
+    DefaultSocketPort = GetInt("Lan", "DefaultSocketPort", 5025)
+End Function
+
+'=============================================================================
+' VISAアドレスビルダー
+'
+' Config シートの D列(Protocol) / E列(Host) / F列(Port) から
+' VISA アドレス文字列を組み立てる。
+' B列にフルアドレスが入力されている場合はそちらを優先すること。
+'
+' 対応プロトコル:
+'   GPIB   → GPIB0::<host>::INSTR          (<host> は GPIB アドレス番号)
+'   TCPIP  → TCPIP0::<host>::INSTR         (VXI-11 標準)
+'   SOCKET → TCPIP0::<host>::<port>::SOCKET (Raw TCP)
+'   HISLIP → TCPIP0::<host>::hislip0::INSTR (高速 LAN)
+'=============================================================================
+
+Public Function BuildVisaAddress(protocol As String, host As String, Optional port As String = "") As String
+    Dim p As String
+    p = UCase(Trim(protocol))
+
+    Select Case p
+        Case "GPIB"
+            BuildVisaAddress = "GPIB0::" & Trim(host) & "::INSTR"
+
+        Case "SOCKET", "TCPIP_SOCKET"
+            Dim actualPort As String
+            actualPort = Trim(port)
+            If actualPort = "" Then actualPort = CStr(DefaultSocketPort())
+            BuildVisaAddress = "TCPIP0::" & Trim(host) & "::" & actualPort & "::SOCKET"
+
+        Case "HISLIP", "TCPIP_HISLIP"
+            BuildVisaAddress = "TCPIP0::" & Trim(host) & "::hislip0::INSTR"
+
+        Case "TCPIP", "VXI11", "LAN", "TCPIP_VXI11"
+            BuildVisaAddress = "TCPIP0::" & Trim(host) & "::INSTR"
+
+        Case Else
+            ' 不明なプロトコル: host をそのまま VISA アドレスとして扱う
+            BuildVisaAddress = Trim(host)
+    End Select
+End Function
+
+'=============================================================================
 ' デバッグ用: 設定内容をメッセージボックスに表示する
 '=============================================================================
 Public Sub ShowConfig()
@@ -99,6 +148,8 @@ Public Sub ShowConfig()
            "  ServerBaseUrl : " & ServerBaseUrl() & vbCrLf & _
            "  PythonExe     : " & PythonExe() & vbCrLf & _
            "  ServerScript  : " & ServerScript() & vbCrLf & _
-           "  HealthTimeout : " & HealthTimeoutSec() & " 秒", _
+           "  HealthTimeout : " & HealthTimeoutSec() & " 秒" & vbCrLf & vbCrLf & _
+           "[Lan]" & vbCrLf & _
+           "  DefaultSocketPort : " & DefaultSocketPort(), _
            vbInformation, "AppConfig"
 End Sub

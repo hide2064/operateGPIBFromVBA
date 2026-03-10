@@ -35,9 +35,12 @@ Private Const SHEET_CONFIG As String = "Config"
 Private Const SHEET_CONTROL As String = "Control"
 
 ' ===== Configシートの列番号 =====
-Private Const COL_CFG_NAME As Integer = 1
-Private Const COL_CFG_ADDRESS As Integer = 2
-Private Const COL_CFG_TIMEOUT As Integer = 3
+Private Const COL_CFG_NAME     As Integer = 1  ' A列: 機器名
+Private Const COL_CFG_ADDRESS  As Integer = 2  ' B列: VISAアドレス (フル指定。D/E列があれば自動生成)
+Private Const COL_CFG_TIMEOUT  As Integer = 3  ' C列: タイムアウト(ms)
+Private Const COL_CFG_PROTOCOL As Integer = 4  ' D列: 接続方式 (GPIB/TCPIP/SOCKET/HISLIP) ※LAN追加時に使用
+Private Const COL_CFG_HOST     As Integer = 5  ' E列: IPアドレス/ホスト名 ※LAN追加時に使用
+Private Const COL_CFG_PORT     As Integer = 6  ' F列: ポート番号 (SOCKET時のみ。省略可)
 
 ' ===== Controlシートの列番号 =====
 Private Const COL_CTL_NAME As Integer = 1
@@ -266,6 +269,13 @@ End Function
 
 '-----------------------------------------------------------------------------
 ' Configシートから機器のVISAアドレスとタイムアウトを取得する
+'
+' 【後方互換】B列にフルVISAアドレスが入力されている場合はそちらを使用する。
+' 【LAN拡張】D列(Protocol) + E列(Host) が入力されている場合は
+'            AppConfig.BuildVisaAddress() でVISAアドレスを自動生成する。
+'
+' Config シートの列構成:
+'   A=機器名 | B=VISAアドレス(フル) | C=Timeout | D=Protocol | E=Host/IP | F=Port
 '-----------------------------------------------------------------------------
 Private Function GetDeviceConfig(deviceName As String, ByRef address As String, ByRef timeout As Long) As Boolean
     Dim wsConfig As Worksheet
@@ -280,6 +290,18 @@ Private Function GetDeviceConfig(deviceName As String, ByRef address As String, 
             address = Trim(wsConfig.Cells(i, COL_CFG_ADDRESS).Value)
             timeout = CLng(wsConfig.Cells(i, COL_CFG_TIMEOUT).Value)
             If timeout <= 0 Then timeout = 5000
+
+            ' D/E列が指定されている場合は VISAアドレスを自動生成 (LAN対応)
+            Dim protocol As String
+            Dim host As String
+            Dim port As String
+            protocol = Trim(wsConfig.Cells(i, COL_CFG_PROTOCOL).Value)
+            host     = Trim(wsConfig.Cells(i, COL_CFG_HOST).Value)
+            port     = Trim(wsConfig.Cells(i, COL_CFG_PORT).Value)
+            If protocol <> "" And host <> "" Then
+                address = AppConfig.BuildVisaAddress(protocol, host, port)
+            End If
+
             GetDeviceConfig = True
             Exit Function
         End If

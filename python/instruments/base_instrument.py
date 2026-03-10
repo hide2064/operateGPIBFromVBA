@@ -1,17 +1,22 @@
 """
-GPIB機器の基底クラス
-すべての機器クラスはこのクラスを継承する
+計測器の基底クラス
+GPIB / LAN (VXI-11 / HiSLIP / Raw Socket) のいずれの接続方式でも動作する。
+すべての機器クラスはこのクラスを継承する。
 """
 import pyvisa
 
 
 class BaseInstrument:
-    """GPIB機器の基底クラス"""
+    """計測器の基底クラス"""
 
     def __init__(self, address: str, timeout: int = 5000):
         """
         Args:
-            address: VISAリソースアドレス (例: "GPIB0::1::INSTR")
+            address: VISAリソースアドレス
+                GPIB 例: "GPIB0::1::INSTR"
+                LAN VXI-11 例: "TCPIP0::192.168.1.1::INSTR"
+                LAN Socket 例: "TCPIP0::192.168.1.1::5025::SOCKET"
+                LAN HiSLIP 例: "TCPIP0::192.168.1.1::hislip0::INSTR"
             timeout: タイムアウト(ms)
         """
         self._address = address
@@ -23,6 +28,11 @@ class BaseInstrument:
         """機器との接続を開く"""
         self._instrument = self._rm.open_resource(self._address)
         self._instrument.timeout = self._timeout
+        # Raw Socket 接続は終端文字が自動設定されないため明示的に設定する
+        # (GPIB / VXI-11 / HiSLIP は pyvisa が自動処理する)
+        if "::SOCKET" in self._address.upper():
+            self._instrument.read_termination  = "\n"
+            self._instrument.write_termination = "\n"
 
     def close(self):
         """機器との接続を閉じる"""
@@ -58,3 +68,17 @@ class BaseInstrument:
     @property
     def address(self) -> str:
         return self._address
+
+    @property
+    def connection_type(self) -> str:
+        """接続方式を返す (GPIB / TCPIP_VXI11 / TCPIP_SOCKET / TCPIP_HISLIP / UNKNOWN)"""
+        addr_upper = self._address.upper()
+        if addr_upper.startswith("GPIB"):
+            return "GPIB"
+        if "::SOCKET" in addr_upper:
+            return "TCPIP_SOCKET"
+        if "HISLIP" in addr_upper:
+            return "TCPIP_HISLIP"
+        if addr_upper.startswith("TCPIP"):
+            return "TCPIP_VXI11"
+        return "UNKNOWN"
