@@ -50,11 +50,14 @@ def get_lan_settings(ini_path: str = None) -> dict:
     Returns:
         default_socket_port, read_termination, write_termination
     """
+    def _unescape(s: str) -> str:
+        return s.replace("\\n", "\n").replace("\\r", "\r")
+
     cfg = _load(ini_path)
     return {
         "default_socket_port": cfg.getint("Lan", "DefaultSocketPort", fallback=5025),
-        "read_termination":    cfg.get   ("Lan", "ReadTermination",   fallback="\n"),
-        "write_termination":   cfg.get   ("Lan", "WriteTermination",  fallback="\n"),
+        "read_termination":    _unescape(cfg.get("Lan", "ReadTermination",  fallback="\n")),
+        "write_termination":   _unescape(cfg.get("Lan", "WriteTermination", fallback="\n")),
     }
 
 
