@@ -102,6 +102,31 @@ def list_resources():
     return jsonify({"resources": resources})
 
 
+@app.route("/debug", methods=["GET"])
+def debug_info():
+    """デバッグ用: サーバー内部状態をまとめて返す"""
+    import sys
+    import logging
+    connections = manager.list_connections()
+    resources = manager.list_resources()
+    root_level = logging.getLogger().level
+    return jsonify({
+        "server": {
+            "python_version": sys.version,
+            "log_level": logging.getLevelName(root_level),
+        },
+        "connections": {
+            "count": len(connections),
+            "addresses": connections,
+        },
+        "resources": {
+            "count": len(resources),
+            "list": resources,
+        },
+        "blueprints": [bp for bp in app.blueprints],
+    })
+
+
 # ------------------------------------------------------------------
 # Blueprint 自動ロード
 # ------------------------------------------------------------------
