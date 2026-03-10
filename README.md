@@ -178,6 +178,110 @@ curl -X POST http://localhost:5000/execute -H "Content-Type: application/json" -
 
 ---
 
+## デバッグの仕方
+
+### 1. `debug_client.py` — VBAなしでAPIを直接テスト
+
+Flaskサーバーに対してコマンドラインから直接リクエストを送れるデバッグツール。
+
+```bash
+# サーバーの疎通確認
+python debug_client.py health
+
+# 機器にコマンドを送信 (GPIB)
+python debug_client.py execute --address GPIB0::1::INSTR --command "*IDN?"
+
+# 機器にコマンドを送信 (LAN VXI-11)
+python debug_client.py execute --address TCPIP0::192.168.1.10::INSTR --command "*IDN?"
+
+# 機器にコマンドを送信 (Raw Socket)
+python debug_client.py execute --address TCPIP0::192.168.1.10::5025::SOCKET --command "*IDN?"
+
+# 現在オープンしている接続一覧
+python debug_client.py connections
+
+# 指定アドレスの接続を閉じる
+python debug_client.py close --address GPIB0::1::INSTR
+
+# VISAで認識されているリソース一覧 (機器が見えているか確認)
+python debug_client.py resources
+
+# サーバー内部状態 (接続数・ログレベル・Blueprint一覧)
+python debug_client.py debug
+
+# ログファイルの末尾を表示 (デフォルト30行)
+python debug_client.py log
+python debug_client.py log --lines 100
+```
+
+接続先は `config/settings.ini` の Host/Port を自動読み込みする。別のサーバーを指定したい場合:
+
+```bash
+python debug_client.py health --url http://192.168.1.100:5000
+```
+
+### 2. ログでトレース
+
+サーバーは `logs/gpib.log` にリクエスト・応答・エラーを記録する。
+
+```bash
+# ログをリアルタイム監視 (PowerShell)
+Get-Content logs\gpib.log -Wait -Tail 30
+
+# デバッグクライアントで末尾表示
+python debug_client.py log --lines 50
+```
+
+**ログレベルの変更** — `config/settings.ini` を編集してサーバーを再起動:
+
+```ini
+[Logging]
+Level=DEBUG   ; INFO → DEBUG に変更すると詳細ログが出力される
+```
+
+| レベル | 出力内容 |
+|--------|---------|
+| `INFO`  | リクエスト受信・コマンド実行・接続情報 (通常運用) |
+| `DEBUG` | 上記に加え、全HTTP通信・VISA詳細ログ (トラブル調査時) |
+
+### 3. Flask APIエンドポイント一覧 (デバッグ用含む)
+
+| Method | URL | 説明 |
+|--------|-----|------|
+| GET | `/health` | サーバー稼働確認 |
+| POST | `/execute` | コマンド実行 |
+| GET | `/connections` | 現在の接続一覧 |
+| DELETE | `/connections/<address>` | 指定接続を閉じる |
+| GET | `/resources` | VISAリソース一覧 |
+| GET | `/debug` | サーバー内部状態 (接続数・ログレベル・Blueprintなど) |
+
+`/debug` はブラウザで `http://127.0.0.1:5000/debug` を開くだけでも確認できる。
+
+### 4. VS Code でブレークポイントデバッグ
+
+`.vscode/launch.json` を作成してFlaskサーバーをデバッグ実行できる:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flask Server (debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/python/server.py",
+      "cwd": "${workspaceFolder}/python",
+      "args": ["--config", "../config/settings.ini"]
+    }
+  ]
+}
+```
+
+起動後、`python/server.py` や `python/gpib_manager.py` にブレークポイントを置き、
+`debug_client.py` からリクエストを送ると該当行で停止する。
+
+---
+
 ## 拡張方法
 
 ### 機器固有クラスの追加
