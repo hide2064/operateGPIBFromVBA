@@ -17,19 +17,18 @@ Attribute VB_Name = "GpibControlHttp"
 '
 ' 【使い方】
 '   1. このファイルをVBAエディタからインポートする
-'   2. SERVER_BASE_URL を環境に合わせて設定する (デフォルトは localhost:5000)
-'   3. Controlシートにボタンを作成し、以下のマクロを割り当てる:
+'   2. AppConfig.bas もインポートする (設定読み込みに使用)
+'   3. config\settings.ini の [Server] セクションを環境に合わせて編集する
+'   4. Controlシートにボタンを作成し、以下のマクロを割り当てる:
 '      - ExecuteAllCommandsHttp    (すべて実行)
 '      - ExecuteSelectedCommandHttp (選択行を実行)
 '      - StartGpibServer           (サーバー起動)
 '=============================================================================
 Option Explicit
 
-' ===== 設定定数 =====
-Private Const SERVER_BASE_URL As String = "http://127.0.0.1:5000"
-Private Const PYTHON_EXE As String = "python"
-Private Const SERVER_SCRIPT As String = "C:\work\operateGPIBFromVBA\operateGPIBFromVBA\python\server.py"
-Private Const HEALTH_TIMEOUT_SEC As Integer = 10  ' サーバー起動待ちの最大秒数
+' ===== HTTP設定は AppConfig モジュール経由で settings.ini から取得 =====
+' (SERVER_BASE_URL, PYTHON_EXE, SERVER_SCRIPT, HEALTH_TIMEOUT_SEC は
+'   AppConfig.ServerBaseUrl() / PythonExe() / ServerScript() / HealthTimeoutSec() で参照)
 
 ' ===== シート名定数 (GpibControl.bas と共通) =====
 Private Const SHEET_CONFIG As String = "Config"
@@ -135,18 +134,18 @@ End Sub
 '-----------------------------------------------------------------------------
 Public Sub StartGpibServer()
     If IsServerRunning() Then
-        MsgBox "サーバーはすでに起動しています。" & vbCrLf & SERVER_BASE_URL, vbInformation
+        MsgBox "サーバーはすでに起動しています。" & vbCrLf & AppConfig.ServerBaseUrl(), vbInformation
         Exit Sub
     End If
 
     Dim cmd As String
-    cmd = "cmd /c start /min """ & PYTHON_EXE & """ """ & SERVER_SCRIPT & """"
+    cmd = "cmd /c start /min """ & AppConfig.PythonExe() & """ """ & AppConfig.ServerScript() & """"
     Shell cmd, vbHide
 
     Application.StatusBar = "サーバーを起動中..."
-    If WaitForServer(HEALTH_TIMEOUT_SEC) Then
+    If WaitForServer(AppConfig.HealthTimeoutSec()) Then
         Application.StatusBar = False
-        MsgBox "サーバーが起動しました。" & vbCrLf & SERVER_BASE_URL, vbInformation
+        MsgBox "サーバーが起動しました。" & vbCrLf & AppConfig.ServerBaseUrl(), vbInformation
     Else
         Application.StatusBar = False
         MsgBox "サーバーの起動を確認できませんでした。" & vbCrLf & _
@@ -197,7 +196,7 @@ Private Function PostExecute(address As String, command As String, timeout As Lo
     Dim url As String
     Dim body As String
 
-    url = SERVER_BASE_URL & "/execute"
+    url = AppConfig.ServerBaseUrl() & "/execute"
     body = "{""address"": """ & JsonEscape(address) & """" _
          & ", ""command"": """ & JsonEscape(command) & """" _
          & ", ""timeout"": " & CStr(timeout) & "}"
@@ -221,7 +220,7 @@ Private Function IsServerRunning() As Boolean
     On Error Resume Next
     Dim http As Object
     Set http = CreateObject("MSXML2.XMLHTTP")
-    http.Open "GET", SERVER_BASE_URL & "/health", False
+    http.Open "GET", AppConfig.ServerBaseUrl() & "/health", False
     http.setTimeouts 0, 1000, 1000, 1000
     http.Send
     IsServerRunning = (Err.Number = 0 And http.Status = 200)

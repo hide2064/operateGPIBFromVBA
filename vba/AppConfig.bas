@@ -1,0 +1,104 @@
+Attribute VB_Name = "AppConfig"
+'=============================================================================
+' AppConfig.bas - アプリケーション設定読み込みモジュール
+'
+' config\settings.ini を Windows API 経由で読み込む。
+' GpibControlHttp.bas など他のモジュールから呼び出して使う。
+'
+' INIファイルのパス: ThisWorkbook.Path\config\settings.ini
+'   (Excelファイルと同じドライブ・フォルダ構成に配置すること)
+'=============================================================================
+Option Explicit
+
+' Windows API: INIファイルの文字列値を読み込む
+#If Win64 Then
+    Private Declare PtrSafe Function GetPrivateProfileString Lib "kernel32" Alias "GetPrivateProfileStringA" ( _
+        ByVal lpApplicationName As String, _
+        ByVal lpKeyName As String, _
+        ByVal lpDefault As String, _
+        ByVal lpReturnedString As String, _
+        ByVal nSize As Long, _
+        ByVal lpFileName As String) As Long
+#Else
+    Private Declare Function GetPrivateProfileString Lib "kernel32" Alias "GetPrivateProfileStringA" ( _
+        ByVal lpApplicationName As String, _
+        ByVal lpKeyName As String, _
+        ByVal lpDefault As String, _
+        ByVal lpReturnedString As String, _
+        ByVal nSize As Long, _
+        ByVal lpFileName As String) As Long
+#End If
+
+Private Const BUFFER_SIZE As Long = 512
+Private Const CONFIG_REL_PATH As String = "\config\settings.ini"
+
+'=============================================================================
+' 基本読み込み関数
+'=============================================================================
+
+' INIファイルの絶対パスを返す
+Public Function ConfigFilePath() As String
+    ConfigFilePath = ThisWorkbook.Path & CONFIG_REL_PATH
+End Function
+
+' 文字列値を取得する
+Public Function GetString(section As String, key As String, defaultValue As String) As String
+    Dim buf As String
+    Dim ret As Long
+    buf = String(BUFFER_SIZE, Chr(0))
+    ret = GetPrivateProfileString(section, key, defaultValue, buf, BUFFER_SIZE, ConfigFilePath())
+    GetString = Left(buf, ret)
+End Function
+
+' 整数値を取得する
+Public Function GetInt(section As String, key As String, defaultValue As Long) As Long
+    Dim val As String
+    val = GetString(section, key, CStr(defaultValue))
+    If IsNumeric(val) Then
+        GetInt = CLng(val)
+    Else
+        GetInt = defaultValue
+    End If
+End Function
+
+'=============================================================================
+' [Server] セクション
+'=============================================================================
+
+' FlaskサーバーのベースURL (例: http://127.0.0.1:5000)
+Public Function ServerBaseUrl() As String
+    Dim host As String
+    Dim port As Long
+    host = GetString("Server", "Host", "127.0.0.1")
+    port = GetInt("Server", "Port", 5000)
+    ServerBaseUrl = "http://" & host & ":" & CStr(port)
+End Function
+
+' Python実行ファイルのパス
+Public Function PythonExe() As String
+    PythonExe = GetString("Server", "PythonExe", "python")
+End Function
+
+' server.py の絶対パス
+Public Function ServerScript() As String
+    ServerScript = GetString("Server", "ServerScript", "")
+End Function
+
+' サーバー起動確認のタイムアウト秒数
+Public Function HealthTimeoutSec() As Long
+    HealthTimeoutSec = GetInt("Server", "HealthTimeoutSec", 10)
+End Function
+
+'=============================================================================
+' デバッグ用: 設定内容をメッセージボックスに表示する
+'=============================================================================
+Public Sub ShowConfig()
+    MsgBox "【現在の設定】" & vbCrLf & vbCrLf & _
+           "INIファイル: " & ConfigFilePath() & vbCrLf & vbCrLf & _
+           "[Server]" & vbCrLf & _
+           "  ServerBaseUrl : " & ServerBaseUrl() & vbCrLf & _
+           "  PythonExe     : " & PythonExe() & vbCrLf & _
+           "  ServerScript  : " & ServerScript() & vbCrLf & _
+           "  HealthTimeout : " & HealthTimeoutSec() & " 秒", _
+           vbInformation, "AppConfig"
+End Sub
