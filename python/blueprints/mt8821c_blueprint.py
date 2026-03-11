@@ -69,9 +69,16 @@ def execute():
     except (KeyError, ValueError, TypeError) as e:
         return jsonify({"success": False, "error": f"パラメータエラー: {e}", "response": ""}), 400
 
-    logger.info("MT8821C | address=%s | action=%s | command=%s", address, action, command)
+    logger.info(
+        "→RECV [MT8821C] POST /mt8821c/execute | addr=%s | action=%s | params=%s | scpi=%s | timeout=%dms",
+        address, action, params, command, timeout,
+    )
 
     result = current_app.gpib_manager.execute(address, command, timeout)
+    logger.info(
+        "←SEND [MT8821C] POST /mt8821c/execute | success=%s | resp=%s",
+        result["success"], result["response"],
+    )
     return jsonify(result), 200 if result["success"] else 500
 
 

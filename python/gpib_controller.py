@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import sys
+import time
 
 # pythonフォルダをパスに追加
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -53,20 +54,35 @@ def main():
 
     result = {"success": False, "response": "", "error": ""}
 
-    logger.info("CLI実行開始 | address=%s | command=%s | timeout=%d", args.address, args.command, timeout)
+    logger.info(
+        "→RECV [CLI] addr=%s | cmd=%s | timeout=%dms | config=%s",
+        args.address, args.command, timeout, args.config or "(default)",
+    )
+    t_start = time.perf_counter()
 
     try:
         with GenericInstrument(address=args.address, timeout=timeout) as instrument:
             result = instrument.execute(args.command)
 
+        elapsed = int((time.perf_counter() - t_start) * 1000)
         if result["success"]:
-            logger.info("CLI実行成功 | response=%s", result["response"])
+            logger.info(
+                "←SEND [CLI] success=True | resp=%s | elapsed=%dms",
+                result["response"], elapsed,
+            )
         else:
-            logger.error("CLI実行失敗 | error=%s", result["error"])
+            logger.error(
+                "←SEND [CLI] success=False | error=%s | elapsed=%dms",
+                result["error"], elapsed,
+            )
 
     except Exception as e:
+        elapsed = int((time.perf_counter() - t_start) * 1000)
         result["error"] = str(e)
-        logger.exception("CLI実行中に例外が発生 | address=%s | command=%s", args.address, args.command)
+        logger.exception(
+            "←SEND [CLI] EXCEPTION | addr=%s | cmd=%s | elapsed=%dms",
+            args.address, args.command, elapsed,
+        )
 
     # 結果をJSONでstdoutに出力 (VBAが読み取る)
     print(json.dumps(result, ensure_ascii=False))

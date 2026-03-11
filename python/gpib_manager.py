@@ -9,7 +9,7 @@ GPIB接続管理クラス
 """
 import logging
 import threading
-from datetime import datetime
+import time
 from typing import Optional
 
 import pyvisa
@@ -54,6 +54,7 @@ class GpibManager:
             "command": command,
         }
 
+        t_start = time.perf_counter()
         last_error = ""
         for attempt in range(self._max_retry + 1):
             try:
@@ -61,7 +62,11 @@ class GpibManager:
                 cmd_result = instrument.execute(command)
                 result.update(cmd_result)
                 if result["success"]:
-                    logger.info("OK  [%s] %s -> %s", address, command, result["response"])
+                    elapsed = int((time.perf_counter() - t_start) * 1000)
+                    logger.info(
+                        "OK    addr=%s cmd=%s resp=%s elapsed=%dms",
+                        address, command, result["response"], elapsed,
+                    )
                     return result
                 last_error = result["error"]
             except Exception as e:
@@ -70,14 +75,18 @@ class GpibManager:
             # 失敗した場合は接続を閉じて再接続を促す
             if attempt < self._max_retry:
                 logger.warning(
-                    "RETRY (%d/%d) [%s] %s : %s",
+                    "RETRY (%d/%d) addr=%s cmd=%s error=%s",
                     attempt + 1, self._max_retry, address, command, last_error,
                 )
                 self._close_connection(address)
 
+        elapsed = int((time.perf_counter() - t_start) * 1000)
         result["success"] = False
         result["error"] = last_error
-        logger.error("FAIL [%s] %s : %s", address, command, last_error)
+        logger.error(
+            "FAIL  addr=%s cmd=%s error=%s elapsed=%dms",
+            address, command, last_error, elapsed,
+        )
         return result
 
     def close_connection(self, address: str) -> bool:
@@ -112,12 +121,19 @@ class GpibManager:
     def _get_or_create(self, address: str, timeout: int) -> GenericInstrument:
         """接続プールから取得、なければ新規作成して接続する"""
         with self._lock:
-            if address not in self._connections:
-                logger.info("OPEN [%s]", address)
-                instrument = GenericInstrument(address=address, timeout=timeout)
-                instrument.open()
-                self._connections[address] = instrument
-            return self._connections[address]
+            if address in self._connections:
+                logger.debug("POOL  HIT  addr=%s (接続再利用)", address)
+                return self._connections[address]
+
+            logger.debug("POOL  MISS addr=%s (新規接続を作成)", address)
+            instrument = GenericInstrument(address=address, timeout=timeout)
+            instrument.open()
+            self._connections[address] = instrument
+            logger.info(
+                "POOL  ADD  addr=%s type=%s (接続プールに追加 / 現在 %d 件)",
+                address, instrument.connection_type, len(self._connections),
+            )
+            return instrument
 
     def _close_connection(self, address: str) -> bool:
         """接続を閉じてプールから削除する"""
@@ -126,8 +142,11 @@ class GpibManager:
         if instrument:
             try:
                 instrument.close()
-                logger.info("CLOSE [%s]", address)
+                logger.info(
+                    "POOL  DEL  addr=%s (接続プールから削除 / 残 %d 件)",
+                    address, len(self._connections),
+                )
                 return True
             except Exception as e:
-                logger.warning("CLOSE エラー [%s]: %s", address, e)
+                logger.warning("CLOSE FAIL addr=%s error=%s", address, e)
         return False

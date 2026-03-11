@@ -21,6 +21,7 @@ import importlib
 import logging
 import os
 import sys
+import time
 
 # pythonフォルダをパスに追加
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 @app.route("/health", methods=["GET"])
 def health():
     """サーバーの稼働確認。VBAが起動チェックに使う。"""
-    logger.debug("GET /health")
+    logger.debug("→RECV [HTTP] GET /health")
     return jsonify({"status": "ok"})
 
 
@@ -57,9 +58,10 @@ def execute():
     Response JSON:
         {"success": true, "response": "...", "error": "", "address": "...", "command": "..."}
     """
+    t_start = time.perf_counter()
     data = request.get_json(silent=True)
     if not data:
-        logger.warning("POST /execute: 不正なリクエスト (JSONではない)")
+        logger.warning("→RECV [HTTP] POST /execute — 不正なリクエスト (JSONではない)")
         return jsonify({"success": False, "error": "リクエストボディがJSONではありません", "response": ""}), 400
 
     address = data.get("address", "").strip()
@@ -67,12 +69,17 @@ def execute():
     timeout = int(data.get("timeout", 5000))
 
     if not address or not command:
-        logger.warning("POST /execute: address または command が未指定")
+        logger.warning("→RECV [HTTP] POST /execute — address または command が未指定")
         return jsonify({"success": False, "error": "address と command は必須です", "response": ""}), 400
 
-    logger.info("RECV | address=%s | command=%s | timeout=%d", address, command, timeout)
+    logger.info("→RECV [HTTP] POST /execute | addr=%s | cmd=%s | timeout=%dms", address, command, timeout)
     result = manager.execute(address, command, timeout)
+    elapsed = int((time.perf_counter() - t_start) * 1000)
     status_code = 200 if result["success"] else 500
+    logger.info(
+        "←SEND [HTTP] POST /execute | success=%s | resp=%s | elapsed=%dms",
+        result["success"], result["response"], elapsed,
+    )
     return jsonify(result), status_code
 
 
@@ -80,14 +87,14 @@ def execute():
 def list_connections():
     """現在オープンしている接続一覧"""
     connections = manager.list_connections()
-    logger.debug("GET /connections: %d 件", len(connections))
+    logger.debug("→RECV [HTTP] GET /connections | count=%d", len(connections))
     return jsonify({"connections": connections})
 
 
 @app.route("/connections/<path:address>", methods=["DELETE"])
 def close_connection(address: str):
     """指定アドレスの接続を閉じる"""
-    logger.info("DELETE /connections/%s", address)
+    logger.info("→RECV [HTTP] DELETE /connections | addr=%s", address)
     closed = manager.close_connection(address)
     if closed:
         return jsonify({"success": True, "address": address})
@@ -98,7 +105,7 @@ def close_connection(address: str):
 def list_resources():
     """VISAで認識されているリソース一覧"""
     resources = manager.list_resources()
-    logger.debug("GET /resources: %s", resources)
+    logger.debug("→RECV [HTTP] GET /resources | count=%d", len(resources))
     return jsonify({"resources": resources})
 
 
