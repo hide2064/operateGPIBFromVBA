@@ -176,6 +176,55 @@ def build_control_sheet(wb: Workbook):
         _data_row(ws, r, row_data, bg=C_SAMPLE_BG if i % 2 == 0 else None)
 
 
+# --------------------------------------------------------------- Result -----
+def build_result_sheet(wb: Workbook):
+    ws = wb.create_sheet("Result")
+    ws.sheet_view.showGridLines = False
+
+    col_widths = {1: 6, 2: 20, 3: 16, 4: 32, 5: 14, 6: 24, 7: 36, 8: 10, 9: 20}
+    for col, w in col_widths.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+
+    ws.row_dimensions[1].height = 22
+    _header_row(ws, 1, {
+        1: "No.",
+        2: "実行日時",
+        3: "機器名",
+        4: "VISAアドレス",
+        5: "接続方式",
+        6: "コマンド / アクション",
+        7: "応答結果",
+        8: "ステータス",
+        9: "備考",
+    })
+
+    # サンプル行 (イメージ表示用)
+    sample_rows = [
+        {1: 1, 2: "2025/01/01 12:00:00", 3: "MT8821C", 4: "GPIB0::1::INSTR",
+         5: "GPIB", 6: "*IDN?", 7: "ANRITSU,MT8821C,...", 8: "OK", 9: ""},
+        {1: 2, 2: "2025/01/01 12:00:01", 3: "MT8821C", 4: "TCPIP0::192.168.1.10::INSTR",
+         5: "LAN VXI-11", 6: "BAND 1", 7: "", 8: "OK", 9: ""},
+        {1: 3, 2: "2025/01/01 12:00:02", 3: "MT8821C", 4: "TCPIP0::192.168.1.10::INSTR",
+         5: "LAN VXI-11", 6: "BAND?", 7: "1", 8: "OK", 9: ""},
+    ]
+    for i, row_data in enumerate(sample_rows):
+        r = i + 2
+        ws.row_dimensions[r].height = 18
+        _data_row(ws, r, row_data, bg=C_SAMPLE_BG if i % 2 == 0 else None)
+        # ステータス列を緑色に
+        ws.cell(row=r, column=8).font = Font(name="Meiryo UI", bold=True,
+                                             color="006400", size=10)
+
+    # 注記
+    note_r = len(sample_rows) + 2
+    note = ws.cell(row=note_r, column=1,
+                   value="(上記はサンプル表示です。実行時には自動的に追記されます。"
+                         " ResultSheet.bas をインポートして使用してください。)")
+    note.font      = Font(name="Meiryo UI", color="BFBFBF", italic=True, size=9)
+    note.alignment = _left()
+    ws.merge_cells(f"A{note_r}:I{note_r}")
+
+
 # ---------------------------------------------------------------- Setup -----
 def build_setup_sheet(wb: Workbook, vba_dir: str):
     ws = wb.create_sheet("Setup")
@@ -219,6 +268,8 @@ def build_setup_sheet(wb: Workbook, vba_dir: str):
         ("GpibControlHttp.bas", "Flask方式 実行モジュール (推奨)"),
         ("GpibControl.bas",     "CLI方式 実行モジュール (試験用・任意)"),
         ("GpibMT8821C.bas",     "Anritsu MT8821C 専用モジュール (任意)"),
+        ("ResultSheet.bas",     "試験結果 Result シート管理モジュール (任意)"),
+        ("MT8821C_Sample.bas",  "MT8821C 動作確認サンプル集 (任意)"),
     ]
     for fname, desc in bas_files:
         exists = "OK" if os.path.exists(os.path.join(vba_dir, fname)) else "?"
@@ -238,12 +289,18 @@ def build_setup_sheet(wb: Workbook, vba_dir: str):
     b(r, "Control シートで「挿入」->「図形」-> 長方形を描き、右クリック ->「マクロの登録」で割り当てる:"); r += 1
 
     btns = [
-        ("サーバー起動",  "GpibControlHttp.StartGpibServer"),
-        ("選択行を実行",  "GpibControlHttp.ExecuteSelectedCommandHttp"),
-        ("すべて実行",    "GpibControlHttp.ExecuteAllCommandsHttp"),
+        ("サーバー起動",           "GpibControlHttp.StartGpibServer"),
+        ("選択行を実行",           "GpibControlHttp.ExecuteSelectedCommandHttp"),
+        ("すべて実行",             "GpibControlHttp.ExecuteAllCommandsHttp"),
+        ("---", "---"),
+        ("Control -> Result 転記", "ResultSheet.Result_AppendFromControl"),
+        ("Result クリア",          "ResultSheet.Result_Clear"),
     ]
     for btn_name, macro in btns:
-        b(r, f"    ボタン名: 「{btn_name}」  ->  マクロ: {macro}", bg="F0F4F9"); r += 1
+        if btn_name == "---":
+            b(r, "    (Result シート操作ボタンを Result シートに追加する場合:)"); r += 1
+        else:
+            b(r, f"    ボタン名: 「{btn_name}」  ->  マクロ: {macro}", bg="F0F4F9"); r += 1
     r += 1
 
     # STEP 5
@@ -251,7 +308,8 @@ def build_setup_sheet(wb: Workbook, vba_dir: str):
     b(r, "1. start_server.bat を実行して Flask サーバーを起動する"); r += 1
     b(r, "2. Config シートに実際の機器名とアドレスを入力する"); r += 1
     b(r, "3. Control シートのコマンド行を選択して「選択行を実行」ボタンを押す"); r += 1
-    b(r, "4. D列に「OK」と表示されれば成功"); r += 2
+    b(r, "4. D列に「OK」と表示されれば成功"); r += 1
+    b(r, "5. 「Control -> Result 転記」ボタンで Result シートへ記録する"); r += 2
 
     # デバッグ
     t(r, "デバッグのヒント", size=12); r += 1
@@ -278,6 +336,9 @@ def main():
 
     print("Control シートを生成中...")
     build_control_sheet(wb)
+
+    print("Result シートを生成中...")
+    build_result_sheet(wb)
 
     print("Setup シートを生成中...")
     build_setup_sheet(wb, vba_dir)

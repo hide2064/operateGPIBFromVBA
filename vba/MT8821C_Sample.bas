@@ -2,35 +2,35 @@ Attribute VB_Name = "MT8821C_Sample"
 '=============================================================================
 ' MT8821C_Sample.bas - MT8821C 動作確認サンプル集
 '
-' GPIB 接続・LAN 接続それぞれで MT8821C の各操作を試すためのサンプル。
-' Config/Control シートは使わず、アドレスをコード内に直書きして単体で動く。
+' 各サンプルはコマンド実行後に Result シートへ結果を1行ずつ自動記録する。
+' ResultSheet.bas がインポートされていることが前提。
 '
-' 【前提】
-'   - AppConfig.bas, GpibMT8821C.bas がインポートされていること
-'   - Flaskサーバーが起動済みであること (start_server.bat を実行)
+' 【前提モジュール】
+'   AppConfig.bas / GpibMT8821C.bas / ResultSheet.bas
 '
 ' 【使い方】
-'   1. 下記の定数セクションをご自身の環境に合わせて変更する
-'   2. VBAエディタのマクロ実行 (F5) またはボタンに割り当てて実行する
+'   1. 下記の定数セクションを環境に合わせて変更する
+'   2. 各マクロを VBAエディタから直接実行 (F5) するか、ボタンに割り当てる
 '
 ' 【サンプル一覧】
 '   [GPIB]
-'     Sample_GPIB_BasicCheck   - 識別・リセット・エラー確認
-'     Sample_GPIB_LteSetup     - Band / Channel / DL Power 設定
-'     Sample_GPIB_CallTest     - コール接続 -> UL電力測定 -> 切断
-'     RunAllSamples_GPIB       - 上記3つを順番に実行
+'     Sample_GPIB_BasicCheck    : 識別・リセット・エラー確認
+'     Sample_GPIB_LteSetup      : Band / Channel / DL Power 設定
+'     Sample_GPIB_CallTest      : コール接続 -> UL電力測定 -> 切断
+'     RunAllSamples_GPIB        : 上記3つを連続実行
 '
 '   [LAN - VXI-11]
-'     Sample_LAN_BasicCheck    - 識別・リセット・エラー確認 (VXI-11)
-'     Sample_LAN_LteSetup      - Band / Channel / DL Power 設定 (VXI-11)
-'     Sample_LAN_CallTest      - コール接続 -> UL電力測定 -> 切断 (VXI-11)
-'     RunAllSamples_LAN        - 上記3つを順番に実行
+'     Sample_LAN_BasicCheck     : 識別・リセット・エラー確認
+'     Sample_LAN_LteSetup       : Band / Channel / DL Power 設定
+'     Sample_LAN_CallTest       : コール接続 -> UL電力測定 -> 切断
+'     RunAllSamples_LAN         : 上記3つを連続実行
 '
-'   [LAN - Raw Socket]
-'     Sample_Socket_BasicCheck - 識別・リセット・エラー確認 (Raw Socket)
+'   [LAN - Raw Socket / HiSLIP]
+'     Sample_Socket_BasicCheck  : 識別・リセット・エラー確認
+'     Sample_HiSLIP_BasicCheck  : 識別・リセット・エラー確認
 '
-'   [LAN - HiSLIP]
-'     Sample_HiSLIP_BasicCheck - 識別・リセット・エラー確認 (HiSLIP)
+'   [比較]
+'     Sample_ConnectionComparison : 全接続方式で *IDN? を一括比較
 '=============================================================================
 Option Explicit
 
@@ -38,22 +38,25 @@ Option Explicit
 ' ★ ここを環境に合わせて変更する ★
 '=============================================================================
 
-' GPIB アドレス (GPIBボードアドレス::機器アドレス)
+' GPIB アドレス
 Private Const ADDR_GPIB     As String = "GPIB0::1::INSTR"
 
-' LAN - VXI-11 (標準的な LAN 接続)
+' LAN - VXI-11
 Private Const ADDR_LAN_VXI  As String = "TCPIP0::192.168.1.10::INSTR"
 
-' LAN - Raw Socket (ポート 5025 が一般的)
+' LAN - Raw Socket
 Private Const ADDR_LAN_SOCK As String = "TCPIP0::192.168.1.10::5025::SOCKET"
 
-' LAN - HiSLIP (高速 LAN インタフェース)
+' LAN - HiSLIP
 Private Const ADDR_LAN_HISL As String = "TCPIP0::192.168.1.10::hislip0::INSTR"
 
 ' LTE テスト設定値
 Private Const LTE_BAND     As Integer = 1      ' Band 1 (2GHz)
 Private Const LTE_CHANNEL  As Long    = 300    ' チャネル番号
 Private Const LTE_DL_POWER As Double  = -70.0  ' DL出力レベル (dBm)
+
+' 機器名 (Result シートに記録される)
+Private Const DEVICE_NAME   As String = "MT8821C"
 
 '=============================================================================
 ' [GPIB] 基本動作確認
@@ -62,32 +65,26 @@ Private Const LTE_DL_POWER As Double  = -70.0  ' DL出力レベル (dBm)
 Public Sub Sample_GPIB_BasicCheck()
     Const TITLE As String = "[GPIB] 基本動作確認"
     Dim addr As String: addr = ADDR_GPIB
-    Dim log As String
-
-    log = "接続先: " & addr & vbCrLf & vbCrLf
+    Dim log  As String: log  = "接続先: " & addr & vbCrLf & vbCrLf
 
     Application.StatusBar = TITLE & " 実行中..."
     On Error GoTo ErrHandler
 
     ' 識別
-    Dim idn As String
-    idn = MT8821C_Identify(addr)
-    log = log & "*IDN?  : " & idn & vbCrLf
+    Dim idn As String: idn = MT8821C_Identify(addr)
+    LogOp addr, "*IDN?", idn, log
 
     ' リセット
-    Dim rst As String
-    rst = MT8821C_Reset(addr)
-    log = log & "*RST   : " & IIf(rst = "", "OK", rst) & vbCrLf
+    Dim rst As String: rst = MT8821C_Reset(addr)
+    LogOp addr, "*RST", rst, log
 
     ' プリセット
-    Dim preset As String
-    preset = MT8821C_Preset(addr)
-    log = log & "PRESET : " & IIf(preset = "", "OK", preset) & vbCrLf
+    Dim pre As String: pre = MT8821C_Preset(addr)
+    LogOp addr, "PRESET", pre, log
 
     ' エラー確認
-    Dim err As String
-    err = MT8821C_GetError(addr)
-    log = log & "ERROR? : " & err & vbCrLf
+    Dim err As String: err = MT8821C_GetError(addr)
+    LogOp addr, "ERROR?", err, log
 
     Application.StatusBar = False
     MsgBox log, vbInformation, TITLE
@@ -100,38 +97,38 @@ End Sub
 
 '=============================================================================
 ' [GPIB] LTE 設定サンプル
-' 実行内容: Band設定 -> Channel設定 -> DL Power設定 -> 各設定値を読み返す
+' 実行内容: Band設定 -> Channel設定 -> DL Power設定 -> 読み返し
 '=============================================================================
 Public Sub Sample_GPIB_LteSetup()
     Const TITLE As String = "[GPIB] LTE 設定"
     Dim addr As String: addr = ADDR_GPIB
-    Dim log As String
-
-    log = "接続先: " & addr & vbCrLf & vbCrLf
+    Dim log  As String: log  = "接続先: " & addr & vbCrLf & vbCrLf
 
     Application.StatusBar = TITLE & " 実行中..."
     On Error GoTo ErrHandler
 
-    ' Band 設定
-    Call MT8821C_SetBand(addr, LTE_BAND)
-    Dim band As String
-    band = MT8821C_GetBand(addr)
-    log = log & "Band   : Set=" & LTE_BAND & "  Get=" & band & vbCrLf
+    ' Band 設定 & 読み返し
+    Dim setRes As String
+    setRes = MT8821C_SetBand(addr, LTE_BAND)
+    LogOp addr, "BAND " & LTE_BAND, setRes, log
+    Dim band As String: band = MT8821C_GetBand(addr)
+    LogOp addr, "BAND?", band, log
 
-    ' Channel 設定
-    Call MT8821C_SetChannel(addr, LTE_CHANNEL)
-    Dim ch As String
-    ch = MT8821C_GetChannel(addr)
-    log = log & "Channel: Set=" & LTE_CHANNEL & "  Get=" & ch & vbCrLf
+    ' Channel 設定 & 読み返し
+    setRes = MT8821C_SetChannel(addr, LTE_CHANNEL)
+    LogOp addr, "CHANL " & LTE_CHANNEL, setRes, log
+    Dim ch As String: ch = MT8821C_GetChannel(addr)
+    LogOp addr, "CHANL?", ch, log
 
-    ' DL Power 設定
-    Call MT8821C_SetDlPower(addr, LTE_DL_POWER)
-    Dim pwr As String
-    pwr = MT8821C_GetDlPower(addr)
-    log = log & "DL Pwr : Set=" & LTE_DL_POWER & "dBm  Get=" & pwr & vbCrLf
+    ' DL Power 設定 & 読み返し
+    setRes = MT8821C_SetDlPower(addr, LTE_DL_POWER)
+    LogOp addr, "OLVL " & LTE_DL_POWER, setRes, log
+    Dim pwr As String: pwr = MT8821C_GetDlPower(addr)
+    LogOp addr, "OLVL?", pwr, log
 
     ' エラー確認
-    log = log & vbCrLf & "ERROR? : " & MT8821C_GetError(addr) & vbCrLf
+    Dim err As String: err = MT8821C_GetError(addr)
+    LogOp addr, "ERROR?", err, log
 
     Application.StatusBar = False
     MsgBox log, vbInformation, TITLE
@@ -144,14 +141,12 @@ End Sub
 
 '=============================================================================
 ' [GPIB] コール接続テスト
-' 実行内容: コール接続 -> 接続状態確認 -> UL電力測定 -> コール切断
+' 実行内容: コール接続 -> 接続状態確認 -> UL電力測定 -> 切断
 '=============================================================================
 Public Sub Sample_GPIB_CallTest()
     Const TITLE As String = "[GPIB] コール接続テスト"
     Dim addr As String: addr = ADDR_GPIB
-    Dim log As String
-
-    log = "接続先: " & addr & vbCrLf & vbCrLf
+    Dim log  As String: log  = "接続先: " & addr & vbCrLf & vbCrLf
 
     If MsgBox("UE (端末) を接続してからOKを押してください。" & vbCrLf & _
               "接続先: " & addr, vbOKCancel + vbQuestion, TITLE) = vbCancel Then
@@ -161,30 +156,27 @@ Public Sub Sample_GPIB_CallTest()
     Application.StatusBar = TITLE & " 実行中..."
     On Error GoTo ErrHandler
 
-    ' コール接続開始
-    Application.StatusBar = "コール接続中..."
-    Call MT8821C_CallConnect(addr)
-    log = log & "CALLSO (接続要求): 送信済み" & vbCrLf
+    ' コール接続
+    Dim conn As String: conn = MT8821C_CallConnect(addr)
+    LogOp addr, "CALLSO", conn, log
 
-    ' 接続状態確認 (3秒待って確認)
+    ' 接続状態確認 (3秒待機)
     Application.Wait Now + TimeSerial(0, 0, 3)
-    Dim stat As String
-    stat = MT8821C_GetCallStatus(addr)
-    log = log & "CALLSTAT?        : " & stat & vbCrLf
+    Dim stat As String: stat = MT8821C_GetCallStatus(addr)
+    LogOp addr, "CALLSTAT?", stat, log
 
     ' UL 電力測定
     Application.StatusBar = "UL電力測定中..."
-    Dim ulpwr As String
-    ulpwr = MT8821C_MeasureUlPower(addr)
-    log = log & "UL Power (dBm)   : " & ulpwr & vbCrLf
+    Dim ulpwr As String: ulpwr = MT8821C_MeasureUlPower(addr)
+    LogOp addr, "MEAS:UL:POW?", ulpwr, log
 
     ' コール切断
-    Application.StatusBar = "コール切断中..."
-    Call MT8821C_CallDisconnect(addr)
-    log = log & "CALLEND (切断)   : 送信済み" & vbCrLf
+    Dim disc As String: disc = MT8821C_CallDisconnect(addr)
+    LogOp addr, "CALLEND", disc, log
 
     ' エラー確認
-    log = log & vbCrLf & "ERROR? : " & MT8821C_GetError(addr) & vbCrLf
+    Dim err As String: err = MT8821C_GetError(addr)
+    LogOp addr, "ERROR?", err, log
 
     Application.StatusBar = False
     MsgBox log, vbInformation, TITLE
@@ -195,9 +187,9 @@ ErrHandler:
     MsgBox "エラー: " & Err.Description, vbCritical, TITLE
 End Sub
 
-'=============================================================================
+'-----------------------------------------------------------------------------
 ' [GPIB] 全サンプルを順番に実行
-'=============================================================================
+'-----------------------------------------------------------------------------
 Public Sub RunAllSamples_GPIB()
     Call Sample_GPIB_BasicCheck
     Call Sample_GPIB_LteSetup
@@ -206,31 +198,26 @@ End Sub
 
 '=============================================================================
 ' [LAN - VXI-11] 基本動作確認
-' 実行内容: 識別 -> リセット -> プリセット -> エラー確認
 '=============================================================================
 Public Sub Sample_LAN_BasicCheck()
     Const TITLE As String = "[LAN VXI-11] 基本動作確認"
     Dim addr As String: addr = ADDR_LAN_VXI
-    Dim log As String
-
-    log = "接続先: " & addr & vbCrLf & vbCrLf
+    Dim log  As String: log  = "接続先: " & addr & vbCrLf & vbCrLf
 
     Application.StatusBar = TITLE & " 実行中..."
     On Error GoTo ErrHandler
 
-    Dim idn As String
-    idn = MT8821C_Identify(addr)
-    log = log & "*IDN?  : " & idn & vbCrLf
+    Dim idn As String: idn = MT8821C_Identify(addr)
+    LogOp addr, "*IDN?", idn, log
 
-    Dim rst As String
-    rst = MT8821C_Reset(addr)
-    log = log & "*RST   : " & IIf(rst = "", "OK", rst) & vbCrLf
+    Dim rst As String: rst = MT8821C_Reset(addr)
+    LogOp addr, "*RST", rst, log
 
-    Dim preset As String
-    preset = MT8821C_Preset(addr)
-    log = log & "PRESET : " & IIf(preset = "", "OK", preset) & vbCrLf
+    Dim pre As String: pre = MT8821C_Preset(addr)
+    LogOp addr, "PRESET", pre, log
 
-    log = log & "ERROR? : " & MT8821C_GetError(addr) & vbCrLf
+    Dim err As String: err = MT8821C_GetError(addr)
+    LogOp addr, "ERROR?", err, log
 
     Application.StatusBar = False
     MsgBox log, vbInformation, TITLE
@@ -247,23 +234,29 @@ End Sub
 Public Sub Sample_LAN_LteSetup()
     Const TITLE As String = "[LAN VXI-11] LTE 設定"
     Dim addr As String: addr = ADDR_LAN_VXI
-    Dim log As String
-
-    log = "接続先: " & addr & vbCrLf & vbCrLf
+    Dim log  As String: log  = "接続先: " & addr & vbCrLf & vbCrLf
 
     Application.StatusBar = TITLE & " 実行中..."
     On Error GoTo ErrHandler
 
-    Call MT8821C_SetBand(addr, LTE_BAND)
-    log = log & "Band   : Set=" & LTE_BAND & "  Get=" & MT8821C_GetBand(addr) & vbCrLf
+    Dim setRes As String
+    setRes = MT8821C_SetBand(addr, LTE_BAND)
+    LogOp addr, "BAND " & LTE_BAND, setRes, log
+    Dim band As String: band = MT8821C_GetBand(addr)
+    LogOp addr, "BAND?", band, log
 
-    Call MT8821C_SetChannel(addr, LTE_CHANNEL)
-    log = log & "Channel: Set=" & LTE_CHANNEL & "  Get=" & MT8821C_GetChannel(addr) & vbCrLf
+    setRes = MT8821C_SetChannel(addr, LTE_CHANNEL)
+    LogOp addr, "CHANL " & LTE_CHANNEL, setRes, log
+    Dim ch As String: ch = MT8821C_GetChannel(addr)
+    LogOp addr, "CHANL?", ch, log
 
-    Call MT8821C_SetDlPower(addr, LTE_DL_POWER)
-    log = log & "DL Pwr : Set=" & LTE_DL_POWER & "dBm  Get=" & MT8821C_GetDlPower(addr) & vbCrLf
+    setRes = MT8821C_SetDlPower(addr, LTE_DL_POWER)
+    LogOp addr, "OLVL " & LTE_DL_POWER, setRes, log
+    Dim pwr As String: pwr = MT8821C_GetDlPower(addr)
+    LogOp addr, "OLVL?", pwr, log
 
-    log = log & vbCrLf & "ERROR? : " & MT8821C_GetError(addr) & vbCrLf
+    Dim err As String: err = MT8821C_GetError(addr)
+    LogOp addr, "ERROR?", err, log
 
     Application.StatusBar = False
     MsgBox log, vbInformation, TITLE
@@ -280,9 +273,7 @@ End Sub
 Public Sub Sample_LAN_CallTest()
     Const TITLE As String = "[LAN VXI-11] コール接続テスト"
     Dim addr As String: addr = ADDR_LAN_VXI
-    Dim log As String
-
-    log = "接続先: " & addr & vbCrLf & vbCrLf
+    Dim log  As String: log  = "接続先: " & addr & vbCrLf & vbCrLf
 
     If MsgBox("UE (端末) を接続してからOKを押してください。" & vbCrLf & _
               "接続先: " & addr, vbOKCancel + vbQuestion, TITLE) = vbCancel Then
@@ -292,18 +283,21 @@ Public Sub Sample_LAN_CallTest()
     Application.StatusBar = TITLE & " 実行中..."
     On Error GoTo ErrHandler
 
-    Call MT8821C_CallConnect(addr)
-    log = log & "CALLSO (接続要求): 送信済み" & vbCrLf
+    Dim conn As String: conn = MT8821C_CallConnect(addr)
+    LogOp addr, "CALLSO", conn, log
 
     Application.Wait Now + TimeSerial(0, 0, 3)
-    log = log & "CALLSTAT?        : " & MT8821C_GetCallStatus(addr) & vbCrLf
+    Dim stat As String: stat = MT8821C_GetCallStatus(addr)
+    LogOp addr, "CALLSTAT?", stat, log
 
-    log = log & "UL Power (dBm)   : " & MT8821C_MeasureUlPower(addr) & vbCrLf
+    Dim ulpwr As String: ulpwr = MT8821C_MeasureUlPower(addr)
+    LogOp addr, "MEAS:UL:POW?", ulpwr, log
 
-    Call MT8821C_CallDisconnect(addr)
-    log = log & "CALLEND (切断)   : 送信済み" & vbCrLf
+    Dim disc As String: disc = MT8821C_CallDisconnect(addr)
+    LogOp addr, "CALLEND", disc, log
 
-    log = log & vbCrLf & "ERROR? : " & MT8821C_GetError(addr) & vbCrLf
+    Dim err As String: err = MT8821C_GetError(addr)
+    LogOp addr, "ERROR?", err, log
 
     Application.StatusBar = False
     MsgBox log, vbInformation, TITLE
@@ -314,9 +308,9 @@ ErrHandler:
     MsgBox "エラー: " & Err.Description, vbCritical, TITLE
 End Sub
 
-'=============================================================================
+'-----------------------------------------------------------------------------
 ' [LAN - VXI-11] 全サンプルを順番に実行
-'=============================================================================
+'-----------------------------------------------------------------------------
 Public Sub RunAllSamples_LAN()
     Call Sample_LAN_BasicCheck
     Call Sample_LAN_LteSetup
@@ -325,29 +319,24 @@ End Sub
 
 '=============================================================================
 ' [LAN - Raw Socket] 基本動作確認
-' ポート5025に Raw TCP で接続する。終端文字は LF (\n) を使用する。
-' MT8821C が Raw Socket に対応している場合に使用する。
 '=============================================================================
 Public Sub Sample_Socket_BasicCheck()
     Const TITLE As String = "[LAN Socket] 基本動作確認"
     Dim addr As String: addr = ADDR_LAN_SOCK
-    Dim log As String
-
-    log = "接続先: " & addr & vbCrLf & _
-          "(Raw Socket - ポート5025, 終端文字 LF)" & vbCrLf & vbCrLf
+    Dim log  As String
+    log = "接続先: " & addr & vbCrLf & "(Raw Socket - ポート5025, 終端文字 LF)" & vbCrLf & vbCrLf
 
     Application.StatusBar = TITLE & " 実行中..."
     On Error GoTo ErrHandler
 
-    Dim idn As String
-    idn = MT8821C_Identify(addr)
-    log = log & "*IDN?  : " & idn & vbCrLf
+    Dim idn As String: idn = MT8821C_Identify(addr)
+    LogOp addr, "*IDN?", idn, log
 
-    Dim rst As String
-    rst = MT8821C_Reset(addr)
-    log = log & "*RST   : " & IIf(rst = "", "OK", rst) & vbCrLf
+    Dim rst As String: rst = MT8821C_Reset(addr)
+    LogOp addr, "*RST", rst, log
 
-    log = log & "ERROR? : " & MT8821C_GetError(addr) & vbCrLf
+    Dim err As String: err = MT8821C_GetError(addr)
+    LogOp addr, "ERROR?", err, log
 
     Application.StatusBar = False
     MsgBox log, vbInformation, TITLE
@@ -356,35 +345,30 @@ Public Sub Sample_Socket_BasicCheck()
 ErrHandler:
     Application.StatusBar = False
     MsgBox "エラー: " & Err.Description & vbCrLf & vbCrLf & _
-           "※ MT8821C が Raw Socket 未対応の場合は VXI-11 (TCPIP::host::INSTR) を使用してください。", _
+           "※ MT8821C が Raw Socket 未対応の場合は VXI-11 を使用してください。", _
            vbCritical, TITLE
 End Sub
 
 '=============================================================================
 ' [LAN - HiSLIP] 基本動作確認
-' HiSLIP (High-Speed LAN Instrument Protocol) で接続する。
-' MT8821C が HiSLIP に対応している場合に使用する (高速・安定)。
 '=============================================================================
 Public Sub Sample_HiSLIP_BasicCheck()
     Const TITLE As String = "[LAN HiSLIP] 基本動作確認"
     Dim addr As String: addr = ADDR_LAN_HISL
-    Dim log As String
-
-    log = "接続先: " & addr & vbCrLf & _
-          "(HiSLIP - hislip0)" & vbCrLf & vbCrLf
+    Dim log  As String
+    log = "接続先: " & addr & vbCrLf & "(HiSLIP - hislip0)" & vbCrLf & vbCrLf
 
     Application.StatusBar = TITLE & " 実行中..."
     On Error GoTo ErrHandler
 
-    Dim idn As String
-    idn = MT8821C_Identify(addr)
-    log = log & "*IDN?  : " & idn & vbCrLf
+    Dim idn As String: idn = MT8821C_Identify(addr)
+    LogOp addr, "*IDN?", idn, log
 
-    Dim rst As String
-    rst = MT8821C_Reset(addr)
-    log = log & "*RST   : " & IIf(rst = "", "OK", rst) & vbCrLf
+    Dim rst As String: rst = MT8821C_Reset(addr)
+    LogOp addr, "*RST", rst, log
 
-    log = log & "ERROR? : " & MT8821C_GetError(addr) & vbCrLf
+    Dim err As String: err = MT8821C_GetError(addr)
+    LogOp addr, "ERROR?", err, log
 
     Application.StatusBar = False
     MsgBox log, vbInformation, TITLE
@@ -393,51 +377,81 @@ Public Sub Sample_HiSLIP_BasicCheck()
 ErrHandler:
     Application.StatusBar = False
     MsgBox "エラー: " & Err.Description & vbCrLf & vbCrLf & _
-           "※ MT8821C が HiSLIP 未対応の場合は VXI-11 (TCPIP::host::INSTR) を使用してください。", _
+           "※ MT8821C が HiSLIP 未対応の場合は VXI-11 を使用してください。", _
            vbCritical, TITLE
 End Sub
 
 '=============================================================================
 ' 接続方式の比較確認
-' GPIB と LAN(VXI-11) の両方で *IDN? を実行して接続を確認する
+' GPIB / LAN (VXI-11 / Socket / HiSLIP) すべてで *IDN? を実行して比較する
 '=============================================================================
 Public Sub Sample_ConnectionComparison()
     Const TITLE As String = "接続方式 比較確認"
     Dim log As String
+    log = "各接続方式での *IDN? 結果" & vbCrLf & String(44, "-") & vbCrLf & vbCrLf
 
-    log = "各接続方式での *IDN? 結果" & vbCrLf & String(40, "-") & vbCrLf & vbCrLf
+    Dim addrs(3) As String
+    Dim labels(3) As String
+    addrs(0) = ADDR_GPIB:     labels(0) = "[GPIB]      "
+    addrs(1) = ADDR_LAN_VXI:  labels(1) = "[LAN VXI-11]"
+    addrs(2) = ADDR_LAN_SOCK: labels(2) = "[LAN Socket]"
+    addrs(3) = ADDR_LAN_HISL: labels(3) = "[LAN HiSLIP]"
 
-    Application.StatusBar = "GPIB 確認中..."
-    On Error Resume Next
-    Dim gpib_res As String
-    gpib_res = MT8821C_Identify(ADDR_GPIB)
-    If Err.Number <> 0 Then gpib_res = "ERROR: " & Err.Description
-    Err.Clear
-    log = log & "[GPIB]" & vbCrLf & "  addr: " & ADDR_GPIB & vbCrLf & "  IDN : " & gpib_res & vbCrLf & vbCrLf
+    Dim i As Integer
+    For i = 0 To 3
+        Application.StatusBar = labels(i) & " 確認中..."
+        On Error Resume Next
+        Dim response As String
+        response = MT8821C_Identify(addrs(i))
+        Dim isOK As Boolean
+        isOK = (Err.Number = 0) And (InStr(UCase(response), "ERROR") = 0) And (response <> "")
+        Err.Clear
+        On Error GoTo 0
 
-    Application.StatusBar = "LAN (VXI-11) 確認中..."
-    Dim vxi_res As String
-    vxi_res = MT8821C_Identify(ADDR_LAN_VXI)
-    If Err.Number <> 0 Then vxi_res = "ERROR: " & Err.Description
-    Err.Clear
-    log = log & "[LAN VXI-11]" & vbCrLf & "  addr: " & ADDR_LAN_VXI & vbCrLf & "  IDN : " & vxi_res & vbCrLf & vbCrLf
-
-    Application.StatusBar = "LAN (Socket) 確認中..."
-    Dim sock_res As String
-    sock_res = MT8821C_Identify(ADDR_LAN_SOCK)
-    If Err.Number <> 0 Then sock_res = "ERROR: " & Err.Description
-    Err.Clear
-    log = log & "[LAN Socket]" & vbCrLf & "  addr: " & ADDR_LAN_SOCK & vbCrLf & "  IDN : " & sock_res & vbCrLf & vbCrLf
-
-    Application.StatusBar = "LAN (HiSLIP) 確認中..."
-    Dim hisl_res As String
-    hisl_res = MT8821C_Identify(ADDR_LAN_HISL)
-    If Err.Number <> 0 Then hisl_res = "ERROR: " & Err.Description
-    Err.Clear
-    On Error GoTo 0
-
-    log = log & "[LAN HiSLIP]" & vbCrLf & "  addr: " & ADDR_LAN_HISL & vbCrLf & "  IDN : " & hisl_res & vbCrLf
+        Call Result_AppendRow(DEVICE_NAME, addrs(i), "*IDN?", response, isOK, "比較確認")
+        log = log & labels(i) & vbCrLf
+        log = log & "  addr: " & addrs(i) & vbCrLf
+        log = log & "  IDN : " & IIf(isOK, response, "(失敗) " & response) & vbCrLf & vbCrLf
+    Next i
 
     Application.StatusBar = False
     MsgBox log, vbInformation, TITLE
+End Sub
+
+'=============================================================================
+' プライベート ヘルパー
+'=============================================================================
+
+'-----------------------------------------------------------------------------
+' 1操作分の結果を Result シートへ記録し、ログ文字列にも追記する
+'
+' 引数:
+'   addr    : VISAアドレス
+'   command : コマンド名 (例: *IDN? / BAND 1 / CALLSO)
+'   response: MT8821C_* 関数の戻り値
+'   log     : MsgBox 用ログ文字列 (参照渡しで追記)
+'-----------------------------------------------------------------------------
+Private Sub LogOp(addr As String, command As String, response As String, ByRef log As String)
+    Dim isQuery As Boolean: isQuery = (InStr(command, "?") > 0)
+    Dim isOK    As Boolean
+
+    If InStr(UCase(response), "ERROR") > 0 Then
+        ' レスポンスに ERROR 文字列 -> 失敗
+        isOK = False
+    ElseIf isQuery Then
+        ' クエリ: 応答が空でなければ成功
+        isOK = (Len(Trim(response)) > 0)
+    Else
+        ' 書き込みコマンド: エラーがなければ成功 (応答は通常空)
+        isOK = True
+    End If
+
+    Call Result_AppendRow(DEVICE_NAME, addr, command, response, isOK)
+
+    ' MsgBox 用ログ
+    If Not isQuery And response = "" Then
+        log = log & command & ": OK" & vbCrLf
+    Else
+        log = log & command & ": " & response & vbCrLf
+    End If
 End Sub
